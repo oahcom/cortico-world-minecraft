@@ -1,0 +1,12 @@
+{
+  "mark": "[danmaku-inject]",
+  "files": [
+    "danmaku-inject.ts",
+    "world.ts",
+    "engine-child.ts",
+    "definition.ts",
+    "ENV_PROMPT.md"
+  ],
+  "port": 9883,
+  "endpoint": "POST http://<97>:9883/inject {user,text}"
+}

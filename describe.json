@@ -1,0 +1,1485 @@
+{
+  "tools": [
+    {
+      "name": "mc_do",
+      "description": "Queue one piece of work in Minecraft as an ordered list of skills. Returns immediately with a task id; the queue is drained one task at a time and each reports completion or obstruction as a minecraft.task event. A blocked task leaves later tasks queued.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "description": "一步一个对象,按顺序执行:\n{\"skill\":\"goto\",\"at\":[100,-20],\"dimension\":\"overworld\"} 去坐标。dimension 是当前维度前置条件,不符就不动。\n                                                 **只写 [x,z] = 按那儿的地表落脚**(区块没加载会照实受阻)。\n                                                 at 也收 mc_map 的路标名:{\"skill\":\"goto\",\"at\":\"家\"}。\n                                                 赶路会自己挖方块/搭方块开路\n{\"skill\":\"transit\",\"at\":[-228,73,58]}          穿过这一格的传送门:nether_portal、end_portal(框中间地面那层)、\n                                                 end_gateway(末地外岛的折跃门)。会先走到门边,再明确踏进门里,\n                                                 等维度(折跃门是落点)切换后才算完成。普通寻路永远绕开这三种门\n{\"skill\":\"goto_player\",\"name\":\"Alice\"}           去某玩家身边\n{\"skill\":\"follow\",\"name\":\"Alice\"}                持续跟随,直到被新任务顶替\n{\"skill\":\"find\",\"target\":\"chest\",\"distance\":32}  找东西,方块和活物都认,只报看得见的(隔玻璃算看得见)。\n                                                 不给 direction = 站着扫一圈,最远 48 格,不挪地方。\n                                                 回执里的 blockAt 是目标方块占用格,不是可站落点;seenAt 是活物被看见那一刻的位置。\n                                                 当前没看见只说明当前观察面没命中,不表示目标不存在。旧位置只在真实看见过时出现,并带年龄。\n                                                 给了 direction = 朝那个方向边走边找,看见就停下报坐标;走满没看见也算做完。\n                                                 若出发点全向扫描先命中,回执会明确请求方向尚未搜索,不能把命中叫作该方向的结果\n{\"skill\":\"find\",\"target\":\"cow\",\"distance\":64,\"direction\":\"east\",\"until\":[\"#ores\",\"water\"]}\n                                                 边走边找时加 \"until\" = 路上看见这里头任何一样就停下来报坐标(算做完)。\n                                                 名单写方块英文 id,也认类别 #ores/#logs/#leaves/#chests/#liquids/#beds;站着扫用不上它\n{\"skill\":\"flee\",\"distance\":24}                   远离最近的敌对生物\n{\"skill\":\"surface\"}                              脱离水体或向上到露天:在水里=浮上水面并站到干燥落脚格,回执另报 sky_visible;\n                                                 只换到气、没找到岸或游不到岸都算没完成;在陆上=挖+垫一路上行到露天\n{\"skill\":\"collect\",\"block\":\"oak_log\",\"count\":3}  采集方块,只挖看得见的——埋在石头里的看不见,得先挖开或者找暴露的。\n                                                 加 \"buried\":true = 看得见但走不过去时,允许挖条路过去(最多 4 次)。\n                                                 加 \"mature\":true = 作物只收 age 到顶的,没长成的留着。\n                                                 tool 不写=节约耐久;\"fastest\"=本步最快;物品 id=本步精确指定,都不改长期设置\n{\"skill\":\"fish\"}                                 钓一竿:12 格内的水面里优先选开阔水域(周围 5×5 至少 2 格深、离岸 ≥3 格,宝藏只在这种水里出),没有才钓岸边并说明;\n                                                 站在原地抛得到就不挪窝。45 秒没上钩就收竿(浮标头顶看不到天时 60 秒);\n                                                 加 \"at\":[x,y,z] = 指定钓哪格水面。抛竿角度按弹道自己算,浮标没落进水里会换角度重抛\n{\"skill\":\"tunnel\",\"at\":[\"~\",\"~-10\",\"~30\"]}       从脚下朝那一格挖一条 1 宽 2 高的通道,斜着自动成楼梯;\n                                                 坡度超 45° 不接。走到终点才算挖通,没走到就报断在哪一格。\n{\"skill\":\"tunnel\",\"at\":[\"~\",\"~-30\",\"~\"]}         终点在正下方 = 竖井,一格一格往下挖(下面塌空就停,不往下掉;竖井是单程的,回不来)\n{\"skill\":\"tunnel\",\"at\":[\"~\",\"~12\",\"~\"]}          终点在正上方 = 塔,一格一格垫上去(垫脚料见 mc_policy)\n{\"skill\":\"tunnel\",\"at\":[\"~\",\"~-30\",\"~\"],\"spiral\":true}\n                                                 正上/正下 + \"spiral\" = 螺旋楼梯:绕脚下 2×2 井筒边挖边转,每格升降 1,\n                                                 挖完上下都能走——下矿要能自己走回来就用这个,别用竖井\n{\"skill\":\"tunnel\",\"at\":[\"~\",\"~-30\",\"~\"],\"until\":[\"#ores\"]}\n                                                 加 \"until\" = 挖的路上周围碰到这里头任何一样就停下来报坐标(算做完,\n                                                 不再往终点挖)。名单写方块英文 id,也认类别 #ores/#logs/#leaves/#chests/#liquids/#beds。\n                                                 tool 不写=节约耐久;\"fastest\"=本步最快;物品 id=本步精确指定\n{\"skill\":\"build\",\"material\":\"torch\",\"on\":[{\"at\":[103,63,-31],\"face\":\"up\"}]}\n                                                 贴着 at 那一格的 face 面放,新方块落在那一面的外侧;\n                                                 face 认 down/up/north/south/west/east,一步最多 16 处\n{\"skill\":\"build\",\"material\":\"torch\",\"anchors\":[[103,64,-31]]}\n                                                 直接点格子:**不写 shape = 就这些格**(1-16 个),贴哪一面由我挑;\n                                                 那一格已经是这个方块就直接算做好。\n                                                 给 shape + 多锚点就按形状连片搭:line 2 个、rect 2 个(轴对齐的面,\n                                                 两锚点须有一轴相等)、triangle 3 个、arc 3 个(过三点的弧)、\n                                                 box 2 个(对角,fill: solid 实心/outline 只有外壳/edges 只有 12 条棱;\n                                                 outline 不清内部,原版 /fill 的 hollow 那个模式这里没有)。\n                                                 一单最多 256 块;材料用完或贴不住就停在那。\n                                                 dryRun 试算:要动几块、材料够不够\n{\"skill\":\"build\",\"blueprint\":\"home-v2\",\"at\":[100,64,-30]}\n                                                 按 mc_blueprint 装载着的那张图施工。**at 是蓝图 [0,0,0] 落在世界的哪一格**,\n                                                 第一次要给,续建省略(接着上次那个锚点往下施工)。\n                                                 开工前先跟世界对一遍账:已经对上的格子跳过,只做差的那些;\n                                                 料用完就停在那儿。完成(或阶段停)会逐格回读验收。\n                                                 加 \"stopAfter\":2 = 施工到第 2 层(y 层号,0 是最低层)就收工;\n                                                 retrofit 初探报出冲突后,审阅无误可加 \"confirm\":true 清掉那些冲突格再施工;\n                                                 或加 \"skipConflicts\":true 把冲突格原样留着、先放能放的(回执点名跳过了哪几格);\n                                                 dryRun 试算:冲突格、在箱/随身/还缺三分账单、手上的料能连着施工到第几步\n{\"skill\":\"excavate\",\"shape\":\"box\",\"anchors\":[[160,-58,95],[168,-52,102]]}\n                                                 按形状挖空间,shape/锚点同 build。一单最多 512 块;\n                                                 紧贴液体的格子不挖。tool 不写=节约耐久;\"fastest\"=本步最快;\n                                                 物品 id=本步精确指定,都不改长期设置\n{\"skill\":\"probe\",\"shape\":\"line\",\"anchors\":[[\"~\",\"~2\",\"~\"],[\"~\",\"~80\",\"~\"]]}\n                                                 只看不动:读出你圈的这片形状里的材质构成与液体;27 格以内\n                                                 逐格报「(x,y,z):方块」,作物带 age。圈哪片由你定\n{\"skill\":\"probe\",\"shape\":\"box\",\"anchors\":[[-40,40,-120],[-8,60,-88]],\"where\":[\"spawner\",\"#chests\"]}\n                                                 加 \"where\" = 只报这几样在这片里的坐标(按远近,每样最多 6 处)。\n                                                 这一档直接读区块,不看视线也不管挡没挡着 —— 封在结构里的刷怪笼、\n                                                 埋着的箱子、矿脉走这条;find 只看得见明面上的东西。名单认 #ores/#logs/#leaves/#chests/#liquids/#beds\n{\"skill\":\"use\",\"item\":\"flint_and_steel\",\"at\":[103,64,-31]}\n                                                 右键那一格:开门/拉杆/按钮、空桶装水、锄头翻地、骨粉催熟、\n                                                 开箱子看一眼、点床睡觉。不写 item = 用手上现在拿着的。\n                                                 加 \"times\":5 = 连着右键 5 次(最多 16)。\n                                                 想让空着的那一格出现东西(放方块/床/船)用 build\n{\"skill\":\"use\",\"item\":\"water_bucket\",\"at\":[-185,70,61]}\n                                                 满桶倒出去:水/岩浆浇在那一格,倒完包里多一个空桶。\n                                                 倒水走这条,build 的 material 不认水桶\n{\"skill\":\"use\",\"item\":\"shears\",\"target\":\"sheep\"} 右键活物:剪毛、挤奶、喂食、上鞍。\n                                                 target 写 villager/wandering_trader = 看报价菜单(只看不买);\n                                                 再带 \"index\":1,\"times\":2 = 按菜单 1 号成交 2 次\n{\"skill\":\"use\",\"item\":\"potion\"}                  只给 item:对自己/面前用,喝药水。\n                                                 投掷类(喷溅药水、末影珍珠、雪球、鸡蛋、三叉戟)再给 at = 朝那一格扔\n{\"skill\":\"use\",\"item\":\"bow\",\"at\":[12,70,-5]}     满弓朝那一格的中心射一支普通箭,不用走过去。回执报箭插在哪、\n                                                 那一格变没变;路上有别的方块挡着就受阻\n{\"skill\":\"use\",\"item\":\"ender_eye\"}               扔末影之眼:回执报扔出点、飞了多远、方位角(正北 0°、正东 90°)、落没落地。\n                                                 at 指末地传送门框架 = 把眼放进框,回执报这一圈几个框放了眼、门开没开\n{\"skill\":\"use\",\"at\":[-147,72,101],\"text\":\"欢迎来我家\\n可缇\"}\n                                                 **往告示牌上写字**:先 build 把牌子放上,再用这条写。\n                                                 \\n 分行,最多 4 行、每行 45 字符;写完读回牌子上的字进回执。\n                                                 手上拿着染料/墨囊/蜂巢时右键做的是改色/发光/上蜡,先空手\n{\"skill\":\"use\",\"item\":\"item_frame\",\"at\":[-147,72,101],\"face\":\"north\"}\n                                                 face = 右键那一格的哪一面(缺省顶面)。画只能贴侧面\n{\"skill\":\"ride\",\"target\":\"pig\",\"to\":[120,64,-30]}\n                                                 骑上坐骑并驾着走。**能驾的只有猪(要先上鞍、包里有胡萝卜钓竿)\n                                                 和船**;马/驴骑得上但驾不了(这版不支持),骑上不动。\n                                                 to 只认水平目的地,到目标 2.5 格内算到;20 秒零推进会自己下来并报走到哪。\n{\"skill\":\"ride\",\"target\":\"boat\"}                 只骑上不走;之后驾驭再来一步 {\"skill\":\"ride\",\"to\":[x,y,z]}\n{\"skill\":\"ride\",\"off\":true}                      从坐骑上下来。骑着的时候寻路器不管坐骑,goto 走不了\n{\"skill\":\"lead\",\"target\":\"cow\",\"to\":[-146,71,103],\"tolerance\":3}\n                                                 **拴绳牵动物**:包里要有拴绳(lead)。走到最近的那只跟前拴上,\n                                                 分段牵着走到 to,到了就松开,它留在那儿。\n                                                 tolerance = 牵到 to 多少格内算到(缺省 3;绳是软的,拉不到落脚点上)。\n                                                 路上它掉队会停下等;绳绷断(超 10 格)当场停下报断在哪儿。\n                                                 拴不上的:村民、幼崽以外的敌对生物、别人已经牵着的\n{\"skill\":\"lead\",\"target\":\"cow\",\"to\":[...],\"tie\":[-145,67,103]}\n                                                 牵到了再**系到 tie 那一格的栅栏上**——这样它才真的圈住了,\n                                                 松开只是它暂时站那儿\n{\"skill\":\"lead\",\"target\":\"cow\"}                  只拴上不牵走(之后再来一步给 to)\n{\"skill\":\"lead\",\"to\":[...],\"keep\":true}          把现在牵着的牵过去,到了继续牵着不松\n{\"skill\":\"lead\",\"off\":true}                      松开现在牵着的那只(绳掉在地上,记得 pickup)\n{\"skill\":\"craft\",\"grid\":[[\"charcoal\"],[\"stick\"]],\"count\":4}\n                                                 **自己摆合成格**:grid 是按行写的名字二维数组,空位写 null。\n                                                 2 行 2 列以内徒手就能做,更大要工作台。产出槽出什么算什么。\n{\"skill\":\"craft\",\"item\":\"wooden_pickaxe\",\"count\":1}\n                                                 也可以只写 item,按游戏自带的配方表摆。**中间材料不会自动补**。\n                                                 够得着的工作台直接用;够不着就放一个自己带的,包里没有才走去现成的。\n                                                 下界合金装备(netherite_sword 等)走锻造台:每件要下界合金升级模板、\n                                                 同种钻石件、下界合金锭各 1 个,钻石件的附魔与耐久跟到产物上\n{\"skill\":\"smelt\",\"input\":\"raw_iron\",\"count\":8,\"fuel\":\"charcoal\"}\n                                                 走到炉边下料点火就走,input 与 fuel 都必写。炉子自己烧\n                                                 (熔炉一件约 10 秒),烧好会有事件提醒;取货用 take 的 at 指着炉子。\n                                                 够得着的炉子直接用;够不着就放一个自己带的,包里没有才走去现成的。\n                                                 还烧着别的东西的炉子不挑,几座炉子可以同时各烧各的;\n                                                 加 \"at\":[x,y,z] = 指定用那一座炉子\n{\"skill\":\"brew\",\"at\":[x,y,z],\"input\":\"nether_wart\",\"bottle\":\"potion\",\"count\":3,\"fuel\":\"blaze_powder\"}\n                                                 下料点火就走,酿一轮约 20 秒,好了有事件提醒;取货用 take 的 at 指着酿造台。\n                                                 **水瓶与所有药水的物品 id 都是 potion**;包里和回执在括号里写装的是什么(水瓶、粗制的药水、抗火·延长)。\n                                                 回执报台里燃料还能烧几轮、在不在酿;下完料没开酿会直接受阻。\n                                                 燃料只吃烈焰粉(一份烧 20 轮),煤不行。\n                                                 材料链三段跳不过:水瓶 →(地狱疣)→ 粗制药水 →(效果材料)→ 基础药水\n                                                 →(红石延时 / 萤石粉加强 / 火药变喷溅 / 龙息变滞留)。\n                                                 红石与萤石粉互斥,同一瓶不能既加强又延时。\n                                                 玻璃瓶装水:{\"skill\":\"use\",\"item\":\"glass_bottle\",\"at\":水源那一格}\n{\"skill\":\"enchant\",\"at\":[x,y,z],\"item\":\"diamond_pickaxe\"}\n                                                 走到附魔台边,把东西放上去**只看三档报价,不下手**。\n                                                 回执报三档各要多少级、多少青金石、显示出来的那条附魔,以及周围有效书架。\n{\"skill\":\"enchant\",\"at\":[x,y,z],\"item\":\"diamond_pickaxe\",\"index\":3}\n                                                 按第 N 档下手(1/2/3 = 上中下三格)。\n                                                 「需 N 级」是**门槛**;真扣掉的是档位号那么多级与同样多的青金石(1/2/3)。\n                                                 原版下手前每档只显示一条附魔,别的要下手才知道。\n                                                 已经附过魔的东西附魔台不接;书架要隔一格、同高或高一格,中间那格必须空着\n{\"skill\":\"anvil\",\"op\":\"combine\",\"item\":\"iron_pickaxe\",\"with\":\"iron_pickaxe\"}\n                                                 铁砧:两件同种合修(耐久相加+12%),或本体+附魔书。\n                                                 op:\"repair\" 与 combine 同义。**花的是经验等级**,回执报实扣几级;\n                                                 等级不够时产出拿不走,回执会说门槛。铁砧每用一次有 12% 概率磨损一级\n{\"skill\":\"anvil\",\"op\":\"rename\",\"item\":\"iron_sword\",\"name\":\"新名字\"}\n                                                 改名(最多 50 字符)。at 不写就用附近 16 格内的铁砧\n{\"skill\":\"anvil\",\"op\":\"combine\",\"item\":\"bow\",\"with\":\"enchanted_book\",\"withPick\":\"无限\"}\n                                                 包里有好几本附魔书(同一个 id)时,靠 pick/withPick 点名要哪一本:\n                                                 写清单括号里的字。不点名 = 撞上哪件算哪件\n{\"skill\":\"grindstone\",\"item\":\"iron_sword\"}       砂轮:磨掉普通附魔并按原版比例**返还经验**(诅咒磨不掉);\n                                                 再给 with(同种工具)= 两件合修成一件。回执报磨前磨后的耐久与附魔、\n                                                 返了多少点经验。at 不写就用附近 16 格内的砂轮\n{\"skill\":\"eat\",\"item\":\"bread\"}                 吃点名的食物;item 必须写完整英文 id。\n                                                 河豚/蜘蛛眼/毒马铃薯会中毒:第一次只回后果不吃,3 分钟内再下一模一样的单才吃。\n                                                 milk_bucket 也走这条:喝掉清光身上的状态效果,不管饱,剩个空桶\n{\"skill\":\"attack\",\"target\":\"zombie\"}             攻击最近的该目标。mode 不写/auto = 距离判断近战或弓(8 格切弓、5.5 格切回近战);\n                                                 melee = 只近战;ranged = 只用弓;kite = 用弓并尽量保持 8–14 格。\n                                                 ranged/kite 没有可用弓箭或看不见目标时会受阻,不会暗换近战;\n                                                 auto 在 8 格外这一箭射不出(被挡、没弹道等)也受阻收手,换站位再下单。\n                                                 end_crystal / ender_dragon 在 128 格内找,其余 32 格\n{\"skill\":\"equip\",\"item\":\"stone_sword\"}           手持物品;盔甲、鞘翅、盾牌会自动穿进对应装备槽。\n{\"skill\":\"equip\",\"item\":\"filled_map\",\"hand\":\"off\"}  hand 指定哪只手:off = 副手,main = 主手;写了就不按物品自动分槽。\n                                                 不写 item = 把那只手腾空(默认主手;骑马、上鞍这类要空手的动作用它)\n{\"skill\":\"pickup\",\"item\":\"cobblestone\"}          拾取附近掉落物;item 可选,不写就近扫\n{\"skill\":\"toss\",\"item\":\"cobblestone\",\"count\":64} 扔掉。不写 at = 自己挑一个开阔方向抛出去,\n                                                 免得东西落回脚边又被自己捡回来\n{\"skill\":\"toss\",\"item\":\"gold_ingot\",\"at\":[12,32,10]}\n                                                 **朝那一格扔**:以物易物把金锭扔到猪灵脚边、\n                                                 把东西放到指定的地方。最远约 8 格,远了先走近。\n                                                 抛物线的落点由服务端算,回执只说朝哪儿扔的\n{\"skill\":\"stow\",\"item\":\"cobblestone\",\"count\":64} 存进附近箱子(32 格内)。先找上次看见还有空位的,没有就开最近没开过的;放不下的换下一口接着存\n{\"skill\":\"stow\",\"item\":\"enchanted_book\",\"pick\":\"精准采集\",\"count\":1}\n                                                 同 id 的几件里只存点名的那件(留下别的)\n{\"skill\":\"take\",\"item\":\"coal\",\"count\":16}        从附近箱子取出,运输矿车也算。先找账本里有的,对不上再开,最多 3 个\n{\"skill\":\"take\",\"at\":[103,63,-31],\"all\":true}    明确清空那一格容器:炉子=输出+没烧完的料+剩的燃料;箱子=整箱。\n                                                 定量取物必须同时写 item 和 count,不默认数量\n{\"skill\":\"chat\",\"text\":\"...\"}                    游戏内说话\n坐标写成 [x,y,z];at 是一个坐标,anchors 是一串坐标。\n每个分量是绝对数字,或 \"~\"/\"~-3\" 相对写法——原点是**这一步开始执行那一刻**我脚下那一格,\n所以 goto 之后接 \"~\" 指的是那个 goto 的落点。没有前后左右的写法。\n回执一律报解析后的绝对坐标。\n方块/物品/实体一律用英文 id(oak_log、cobblestone、skeleton);target 也收玩家名。\n类别名有两套:target/block/material 认 log、planks、ore、wool 这样的裸名(它们本身不是物品 id),把所有同类算进去;\nuntil 名单认带井号的 #ores/#logs/#leaves/#chests/#liquids/#beds。\n**写一个真实物品 id 就只认它自己**:obsidian 不会拿哭泣的黑曜石顶,torch 不是灵魂火把,\nchest 不是末影箱,dirt 不是土径 —— 要\"随便哪种木板\"就写裸类别名 planks。\ncount 一律 1-64;distance:flee 1-128,find 1-1024(不给 direction 时站着扫,最远 48)。\n\"needs\" 声明这一步依赖哪些更早的步(序号 1 起);\"needs\":[] = 独立步。缺省见字段说明。\n每一步都会核验:判据由执行器按 (skill, 参数) 推,达成与落空都写进回执\n(「该步按『背包内原木 ≥5』核验:达成(实测 7)」)。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skill": {
+                  "type": "string",
+                  "enum": [
+                    "goto",
+                    "transit",
+                    "goto_player",
+                    "follow",
+                    "find",
+                    "flee",
+                    "surface",
+                    "collect",
+                    "fish",
+                    "tunnel",
+                    "build",
+                    "excavate",
+                    "probe",
+                    "use",
+                    "ride",
+                    "lead",
+                    "craft",
+                    "smelt",
+                    "brew",
+                    "enchant",
+                    "anvil",
+                    "grindstone",
+                    "eat",
+                    "attack",
+                    "equip",
+                    "pickup",
+                    "toss",
+                    "stow",
+                    "take",
+                    "chat"
+                  ]
+                },
+                "at": {
+                  "type": [
+                    "array",
+                    "string"
+                  ],
+                  "items": {
+                    "type": [
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "minItems": 2,
+                  "maxItems": 3,
+                  "description": "用于 goto(只写 [x,z] = 按那儿的地表落脚;给字符串 = mc_map 路标名) / transit(当前维度里的一格传送门方块;给字符串 = 当前维度的 mc_map 路标名) / fish / tunnel(通道终点) / build(按蓝图施工时:蓝图 [0,0,0] 落在世界的哪一格) / use(右键那一格;与 target 二选一) / smelt(指定用哪一座炉子) / brew(指定用哪一座酿造台) / enchant / anvil(指定用哪一座铁砧;不写用最近的) / grindstone(指定用哪一座砂轮;不写用最近的) / toss(朝那一格扔;不写 = 自己挑一个开阔方向) / take(点名哪一格容器)"
+                },
+                "dimension": {
+                  "type": "string",
+                  "description": "用于 goto(可选的当前维度前置条件(overworld/the_nether/the_end))"
+                },
+                "dryRun": {
+                  "type": "boolean",
+                  "description": "用于 goto / tunnel / build / excavate"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "用于 goto_player(在线玩家名) / follow(在线玩家名) / anvil(rename 必写:新名字)"
+                },
+                "target": {
+                  "type": "string",
+                  "description": "用于 find(要找的方块或活物英文 id) / use(右键活物;与 at 二选一) / ride(骑上哪种(实体英文 id:pig/boat/horse…);已骑着时可省) / lead(拴哪种(实体英文 id);已经牵着时可省) / attack(实体英文 id 或玩家名)"
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "north",
+                    "south",
+                    "east",
+                    "west",
+                    "northeast",
+                    "northwest",
+                    "southeast",
+                    "southwest"
+                  ],
+                  "description": "用于 find(给了就边走边找;不给就站着扫)"
+                },
+                "distance": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1024,
+                  "description": "用于 find / flee(1-128)"
+                },
+                "until": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "description": "方块英文 id 或类别 #ores/#logs/#leaves/#chests/#liquids/#beds。用于 find(边走边找时:路上碰到这里头任何一样就停) / tunnel(挖的路上碰到这里头任何一样就停)"
+                },
+                "block": {
+                  "type": "string",
+                  "description": "方块英文 id。用于 collect"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 64,
+                  "description": "用于 collect / craft / smelt / brew(1-3;放几瓶(三个瓶位)) / toss / stow / take(定量取物必须显式写;不再默认成 1)"
+                },
+                "buried": {
+                  "type": "boolean",
+                  "description": "用于 collect"
+                },
+                "mature": {
+                  "type": "boolean",
+                  "description": "用于 collect"
+                },
+                "tool": {
+                  "type": "string",
+                  "description": "物品英文 id 或 fastest。用于 collect(只覆盖本步;不写时节约耐久) / tunnel(只覆盖本步;不写时节约耐久) / excavate(只覆盖本步;不写时节约耐久)"
+                },
+                "spiral": {
+                  "type": "boolean",
+                  "description": "用于 tunnel(正上/正下时改挖 2×2 螺旋楼梯(上下都能走))"
+                },
+                "blueprint": {
+                  "type": "string",
+                  "description": "mc_blueprint 装载着的键。用于 build(按蓝图施工;形状与材料都在图里)"
+                },
+                "stopAfter": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "用于 build(按蓝图施工时:做到这个 y 层就收工(0 是最低层))"
+                },
+                "confirm": {
+                  "type": "boolean",
+                  "description": "用于 build(retrofit 有冲突时:确认清掉冲突格后施工)"
+                },
+                "skipConflicts": {
+                  "type": "boolean",
+                  "description": "用于 build(retrofit 有冲突时:留着冲突格,先放能放的)"
+                },
+                "shape": {
+                  "type": "string",
+                  "enum": [
+                    "line",
+                    "rect",
+                    "triangle",
+                    "arc",
+                    "box"
+                  ],
+                  "description": "用于 build(不写 = 就 anchors 那些格) / excavate / probe"
+                },
+                "on": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": [
+                          "array",
+                          "string"
+                        ],
+                        "items": {
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "face": {
+                        "type": "string",
+                        "enum": [
+                          "down",
+                          "up",
+                          "north",
+                          "south",
+                          "west",
+                          "east"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "face"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "description": "用于 build(贴着 at 那一格的 face 面放;与 anchors 二选一)"
+                },
+                "anchors": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "array",
+                      "string"
+                    ],
+                    "items": {
+                      "type": [
+                        "number",
+                        "string"
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "description": "用于 build(不写 shape = 就这些格;与 on 二选一) / excavate(数量由 shape 定) / probe(数量由 shape 定)"
+                },
+                "material": {
+                  "type": "string",
+                  "description": "方块英文 id。用于 build"
+                },
+                "fill": {
+                  "type": "string",
+                  "enum": [
+                    "solid",
+                    "outline",
+                    "edges"
+                  ],
+                  "description": "用于 build(只对 box 有意义) / excavate / probe(只对 box 有意义)"
+                },
+                "where": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "description": "方块英文 id 或类别 #ores/#logs/#leaves/#chests/#liquids/#beds;实体 id 按收到的实体表报。用于 probe(只报这几样在这片里的坐标(不看视线))"
+                },
+                "item": {
+                  "type": "string",
+                  "description": "用于 use(不写 = 用手上现在拿着的) / craft(按游戏配方表摆;与 grid 二选一) / enchant(要附魔的物品英文 id) / anvil(左格物品英文 id) / grindstone(要磨的物品英文 id) / eat(食物英文 id(牛奶桶写 milk_bucket)) / equip(物品英文 id;不写 = 把手腾空) / pickup(不写就近扫) / toss(物品英文 id) / stow(物品英文 id) / take(物品英文 id;定量取物时与 count 一起写)"
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 99,
+                  "description": "用于 use / enchant(1-3;不写 = 只看报价;写了 = 按那一档下手)"
+                },
+                "times": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16,
+                  "description": "用于 use(连着右键几次;带 index 时是成交几次)"
+                },
+                "text": {
+                  "type": "string",
+                  "description": "用于 use(写在告示牌上的字,\\n 分行;最多 4 行、每行 45 字符) / chat"
+                },
+                "back": {
+                  "type": "boolean",
+                  "description": "用于 use(写在牌子背面;缺省正面)"
+                },
+                "face": {
+                  "type": "string",
+                  "enum": [
+                    "down",
+                    "up",
+                    "north",
+                    "south",
+                    "west",
+                    "east"
+                  ],
+                  "description": "用于 use(右键那一格的哪一面;缺省顶面)"
+                },
+                "to": {
+                  "type": [
+                    "array",
+                    "string"
+                  ],
+                  "items": {
+                    "type": [
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "用于 ride(驾着去哪;只有猪和船能驾) / lead(牵去哪)"
+                },
+                "off": {
+                  "type": "boolean",
+                  "description": "用于 ride(下坐骑;与 target/to 互斥) / lead(松开;与 target/to/tie/keep 互斥)"
+                },
+                "tolerance": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16,
+                  "description": "用于 lead(牵到 to 多少格内算到)"
+                },
+                "tie": {
+                  "type": [
+                    "array",
+                    "string"
+                  ],
+                  "items": {
+                    "type": [
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "用于 lead(到了系在这一格的栅栏上)"
+                },
+                "keep": {
+                  "type": "boolean",
+                  "description": "用于 lead(到了继续牵着,不松开)"
+                },
+                "grid": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "description": "用于 craft(与 item 二选一)"
+                },
+                "input": {
+                  "type": "string",
+                  "description": "用于 smelt(原料英文 id) / brew(这一轮加的材料英文 id)"
+                },
+                "fuel": {
+                  "type": "string",
+                  "description": "用于 smelt(燃料英文 id) / brew(燃料英文 id(原版只吃 blaze_powder))"
+                },
+                "bottle": {
+                  "type": "string",
+                  "description": "瓶子英文 id(水瓶和药水都是 potion;空玻璃瓶放进去酿不出东西)。用于 brew"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "repair",
+                    "combine",
+                    "rename"
+                  ],
+                  "description": "用于 anvil"
+                },
+                "with": {
+                  "type": "string",
+                  "description": "用于 anvil(repair/combine 必写:右格放什么) / grindstone(合修:同种的另一件)"
+                },
+                "pick": {
+                  "type": "string",
+                  "description": "用于 anvil(同 id 的几件里挑哪一件:写清单括号里的字(「无限」「效率IV」,英文附魔 id 也认);不写 = 撞上哪件算哪件。按内容匹配,不是序号,存掉一件不影响其余几件怎么写) / grindstone / equip / toss / stow / take"
+                },
+                "withPick": {
+                  "type": "string",
+                  "description": "用于 anvil(同 pick,筛的是 with 那一格) / grindstone"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "auto",
+                    "melee",
+                    "ranged",
+                    "kite"
+                  ],
+                  "description": "用于 attack(不写 = auto)"
+                },
+                "hand": {
+                  "type": "string",
+                  "enum": [
+                    "main",
+                    "off"
+                  ],
+                  "description": "用于 equip(不写 = 按物品分槽)"
+                },
+                "all": {
+                  "type": "boolean",
+                  "description": "用于 take(只在 at+all:true 时清空指定容器)"
+                },
+                "needs": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "description": "任何技能都可带:依赖哪些更早的步(序号 1 起)。不写=只拦因果:要用更早某步的产出、那一步又没做成时才跳过,其余照跑;[]=独立步"
+                }
+              },
+              "required": [
+                "skill"
+              ]
+            }
+          },
+          "queue": {
+            "type": "string",
+            "enum": [
+              "replace",
+              "append",
+              "now"
+            ],
+            "description": "这一单跟队列的关系。不写 = replace:撤掉排着的那些,接在正在做的那件后面(回执点名撤了谁);append:排到队尾,排着的都保留;now:中断正在做的那件、插到队头立刻开做,排着的保留(正在逃命时不抢,排队头等它逃完)"
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      },
+      "tags": [
+        "act"
+      ],
+      "summary": {
+        "zh": "把一件活排进工作队列:走路、挖掘、采集、合成、建造、战斗等技能按顺序执行。",
+        "en": "Queues a piece of work as an ordered list of skills such as walking, digging, gathering, crafting, building and fighting."
+      }
+    },
+    {
+      "name": "mc_scout",
+      "description": "Queue a read-only trial of the same skills as mc_do: probe, plus goto/build/excavate/tunnel (always dry-run). Same queue and task events; does not change the world.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "description": "一步一个对象,按顺序试算,不动世界。收 goto / tunnel / build / excavate / probe 这几个技能,写法与参数跟 mc_do 的 steps 完全一样(见 mc_do 的说明),一律按试算跑,不用自己写 dryRun。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skill": {
+                  "type": "string",
+                  "enum": [
+                    "goto",
+                    "tunnel",
+                    "build",
+                    "excavate",
+                    "probe"
+                  ]
+                },
+                "at": {
+                  "type": [
+                    "array",
+                    "string"
+                  ],
+                  "items": {
+                    "type": [
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "minItems": 2,
+                  "maxItems": 3,
+                  "description": "用于 goto(只写 [x,z] = 按那儿的地表落脚;给字符串 = mc_map 路标名) / tunnel(通道终点) / build(按蓝图施工时:蓝图 [0,0,0] 落在世界的哪一格)"
+                },
+                "dimension": {
+                  "type": "string",
+                  "description": "用于 goto(可选的当前维度前置条件(overworld/the_nether/the_end))"
+                },
+                "dryRun": {
+                  "type": "boolean",
+                  "description": "用于 goto / tunnel / build / excavate"
+                },
+                "spiral": {
+                  "type": "boolean",
+                  "description": "用于 tunnel(正上/正下时改挖 2×2 螺旋楼梯(上下都能走))"
+                },
+                "tool": {
+                  "type": "string",
+                  "description": "物品英文 id 或 fastest。用于 tunnel(只覆盖本步;不写时节约耐久) / excavate(只覆盖本步;不写时节约耐久)"
+                },
+                "until": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "description": "方块英文 id 或类别 #ores/#logs/#leaves/#chests/#liquids/#beds。用于 tunnel(挖的路上碰到这里头任何一样就停)"
+                },
+                "blueprint": {
+                  "type": "string",
+                  "description": "mc_blueprint 装载着的键。用于 build(按蓝图施工;形状与材料都在图里)"
+                },
+                "stopAfter": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "用于 build(按蓝图施工时:做到这个 y 层就收工(0 是最低层))"
+                },
+                "confirm": {
+                  "type": "boolean",
+                  "description": "用于 build(retrofit 有冲突时:确认清掉冲突格后施工)"
+                },
+                "skipConflicts": {
+                  "type": "boolean",
+                  "description": "用于 build(retrofit 有冲突时:留着冲突格,先放能放的)"
+                },
+                "shape": {
+                  "type": "string",
+                  "enum": [
+                    "line",
+                    "rect",
+                    "triangle",
+                    "arc",
+                    "box"
+                  ],
+                  "description": "用于 build(不写 = 就 anchors 那些格) / excavate / probe"
+                },
+                "on": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": [
+                          "array",
+                          "string"
+                        ],
+                        "items": {
+                          "type": [
+                            "number",
+                            "string"
+                          ]
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "face": {
+                        "type": "string",
+                        "enum": [
+                          "down",
+                          "up",
+                          "north",
+                          "south",
+                          "west",
+                          "east"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "face"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "description": "用于 build(贴着 at 那一格的 face 面放;与 anchors 二选一)"
+                },
+                "anchors": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "array",
+                      "string"
+                    ],
+                    "items": {
+                      "type": [
+                        "number",
+                        "string"
+                      ]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "description": "用于 build(不写 shape = 就这些格;与 on 二选一) / excavate(数量由 shape 定) / probe(数量由 shape 定)"
+                },
+                "material": {
+                  "type": "string",
+                  "description": "方块英文 id。用于 build"
+                },
+                "fill": {
+                  "type": "string",
+                  "enum": [
+                    "solid",
+                    "outline",
+                    "edges"
+                  ],
+                  "description": "用于 build(只对 box 有意义) / excavate / probe(只对 box 有意义)"
+                },
+                "where": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 12,
+                  "description": "方块英文 id 或类别 #ores/#logs/#leaves/#chests/#liquids/#beds;实体 id 按收到的实体表报。用于 probe(只报这几样在这片里的坐标(不看视线))"
+                },
+                "needs": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "description": "任何技能都可带:依赖哪些更早的步(序号 1 起)。不写=只拦因果:要用更早某步的产出、那一步又没做成时才跳过,其余照跑;[]=独立步"
+                }
+              },
+              "required": [
+                "skill"
+              ]
+            }
+          },
+          "queue": {
+            "type": "string",
+            "enum": [
+              "replace",
+              "append",
+              "now"
+            ],
+            "description": "这一单跟队列的关系。不写 = replace:撤掉排着的那些,接在正在做的那件后面(回执点名撤了谁);append:排到队尾,排着的都保留;now:中断正在做的那件、插到队头立刻开做,排着的保留(正在逃命时不抢,排队头等它逃完)"
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "用与 mc_do 相同的技能做一次只读试跑,看能不能走到、能不能建,不改动世界。",
+        "en": "Dry-runs the same skills as mc_do to see whether a route or build would work, without changing the world."
+      }
+    },
+    {
+      "name": "mc_policy",
+      "description": "Set standing rules for how the work gets done in Minecraft. Takes effect immediately, does not queue behind tasks. Call with no fields to read the current rules back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scaffold": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "垫一格用哪些方块,顺序即优先;[] = 不垫"
+          },
+          "light": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "插一根用哪些;[] = 不插"
+          },
+          "lightWhen": {
+            "type": "string",
+            "enum": [
+              "dig",
+              "anywhere"
+            ],
+            "description": "什么场合黑了才插:dig 只在挖通道/挖空间的时候,anywhere 赶路和采集途中也插"
+          },
+          "travel": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "dig",
+              "place"
+            ],
+            "description": "赶路遇到坎是挖开还是垫过去"
+          },
+          "reserve": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "收着不主动拿去挖的家伙什;[] = 都不收着"
+          },
+          "fight": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "armed",
+              "off"
+            ],
+            "description": "怪贴到跟前主动动手的条件;挨打一律还手,这一条管不了"
+          }
+        },
+        "required": [],
+        "description": "干活的常驻规矩,给哪个字段就改哪个,立即生效直到下次改。不排队,不占任务号。\n一个字段都不给 = 只念一遍现在生效的规矩。\nscaffold  [\"dirt\",\"cobblestone\"]   脚下没底时垫一格用哪些方块,顺序即优先。\n                                   赶路、逃跑、tunnel 垫桥、塔的每一格、上露天的\n                                   每一格都用这份。[] = 不垫\nlight     [\"torch\"]                周身黑下来插一根用哪些。[] = 不插\nlightWhen \"dig\" | \"anywhere\"       什么场合黑了才插:dig 只在挖通道/挖空间的时候\n                                   (默认),anywhere 赶路和采集途中也插\ntravel    \"auto\" | \"dig\" | \"place\" 赶路遇到坎:auto 按代价自选,dig 能挖就不垫,\n                                   place 能垫就不挖\nreserve   [\"iron_pickaxe\"]         这几件家伙什收着,挖东西不主动拿。\n                                   收着的那把是唯一挖得出掉落的时候仍然会拿。[] = 都不收着\nfight     \"auto\" | \"armed\" | \"off\" 怪贴到跟前主动动手的条件:armed 手上有趁手的\n                                   家伙才动手(默认),auto 空手也一律动手,\n                                   off 不主动动手。挨打一律还手,这一条改不了。\n                                   这一格重连之后回 armed,别的五格留着\n方块/物品一律用英文 id(dirt、cobblestone、torch、iron_pickaxe)。\n料不在包里的那一条就不做,不算受阻;做过的进收工回执报数。\n回执一律念出六条当下生效的规矩,没改过的念默认值。"
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "设定干活的常驻规矩,立即生效。",
+        "en": "Sets standing rules for how work is done; takes effect immediately."
+      }
+    },
+    {
+      "name": "mc_goal",
+      "description": "Register and track what you are working towards in this world: up to five slots (#1..#5). Targets can be builds, gathered items, entity kills or captures, exploration, transport, farming, redstone work, survival time, or any other project. Call with no fields to read them all back. Tied to the current world and empty after a restart or a world change, so the lasting copy belongs in your own notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "add": {
+            "type": "object",
+            "description": "挂一条新目标并给出可核验的实施计划,落在最小的空格上;五格全占着就不挂。",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "一句话说清这条目标是什么。"
+              },
+              "plan": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "description": "按执行顺序列里程碑。每步恰好给 verify 或 judgment；verify 数组按 AND 求值。",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "description": "这一步要实施什么。"
+                    },
+                    "verify": {
+                      "type": [
+                        "object",
+                        "array"
+                      ],
+                      "description": "一个机械旁证，或最多 8 个旁证组成的 AND 数组。",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "block",
+                            "inventory",
+                            "blueprint",
+                            "position",
+                            "entity",
+                            "item",
+                            "status"
+                          ]
+                        },
+                        "at": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "is": {
+                          "type": "string",
+                          "description": "block 的精确方块 id。"
+                        },
+                        "item": {
+                          "type": "string",
+                          "description": "inventory/item 的精确物品 id。"
+                        },
+                        "type": {
+                          "type": "string",
+                          "description": "entity 的精确实体 id。"
+                        },
+                        "count": {
+                          "type": [
+                            "number",
+                            "string"
+                          ],
+                          "description": "非负数表示恰好；也可写 \">=8\" / \"<=2\"。"
+                        },
+                        "key": {
+                          "type": "string",
+                          "description": "blueprint 的蓝图键。"
+                        },
+                        "loaded": {
+                          "type": "boolean",
+                          "description": "blueprint 是否已装载。"
+                        },
+                        "matched": {
+                          "type": [
+                            "number",
+                            "string"
+                          ],
+                          "description": "非负数表示恰好；也可写 \">=8\" / \"<=2\"。"
+                        },
+                        "region": {
+                          "type": "array",
+                          "minItems": 2,
+                          "maxItems": 2,
+                          "items": {
+                            "type": "array",
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          "description": "两个角 [[x1,y1,z1],[x2,y2,z2]]；必须同时给 dimension。"
+                        },
+                        "dimension": {
+                          "type": "string",
+                          "description": "region 所在维度，如 minecraft:overworld。"
+                        },
+                        "field": {
+                          "type": "string",
+                          "enum": [
+                            "health",
+                            "food",
+                            "oxygen",
+                            "burning"
+                          ]
+                        },
+                        "equals": {
+                          "type": [
+                            "number",
+                            "string",
+                            "boolean"
+                          ],
+                          "description": "status 的目标值；数值状态也可写 \">=8\" / \"<=2\"。"
+                        }
+                      },
+                      "required": [
+                        "source"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "description": "机械旁证。source 决定字段：block(at,is)；inventory(item,count)；blueprint(key,loaded?/matched?)；position(region,dimension)；entity(type,region,dimension,count)；item(item,region,dimension,count)；status(field,equals)。",
+                        "properties": {
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "block",
+                              "inventory",
+                              "blueprint",
+                              "position",
+                              "entity",
+                              "item",
+                              "status"
+                            ]
+                          },
+                          "at": {
+                            "type": "array",
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          "is": {
+                            "type": "string",
+                            "description": "block 的精确方块 id。"
+                          },
+                          "item": {
+                            "type": "string",
+                            "description": "inventory/item 的精确物品 id。"
+                          },
+                          "type": {
+                            "type": "string",
+                            "description": "entity 的精确实体 id。"
+                          },
+                          "count": {
+                            "type": [
+                              "number",
+                              "string"
+                            ],
+                            "description": "非负数表示恰好；也可写 \">=8\" / \"<=2\"。"
+                          },
+                          "key": {
+                            "type": "string",
+                            "description": "blueprint 的蓝图键。"
+                          },
+                          "loaded": {
+                            "type": "boolean",
+                            "description": "blueprint 是否已装载。"
+                          },
+                          "matched": {
+                            "type": [
+                              "number",
+                              "string"
+                            ],
+                            "description": "非负数表示恰好；也可写 \">=8\" / \"<=2\"。"
+                          },
+                          "region": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "items": {
+                              "type": "array",
+                              "minItems": 3,
+                              "maxItems": 3,
+                              "items": {
+                                "type": "integer"
+                              }
+                            },
+                            "description": "两个角 [[x1,y1,z1],[x2,y2,z2]]；必须同时给 dimension。"
+                          },
+                          "dimension": {
+                            "type": "string",
+                            "description": "region 所在维度，如 minecraft:overworld。"
+                          },
+                          "field": {
+                            "type": "string",
+                            "enum": [
+                              "health",
+                              "food",
+                              "oxygen",
+                              "burning"
+                            ]
+                          },
+                          "equals": {
+                            "type": [
+                              "number",
+                              "string",
+                              "boolean"
+                            ],
+                            "description": "status 的目标值；数值状态也可写 \">=8\" / \"<=2\"。"
+                          }
+                        },
+                        "required": [
+                          "source"
+                        ]
+                      },
+                      "minItems": 1,
+                      "maxItems": 8
+                    },
+                    "judgment": {
+                      "type": "string",
+                      "description": "说明为什么这一步只能由你现场判断；完成时再用 milestone 提交判断说明。"
+                    }
+                  },
+                  "required": [
+                    "do"
+                  ]
+                }
+              },
+              "blueprint": {
+                "type": "string",
+                "description": "这条目标对应的蓝图键(可不填)。绑了蓝图就不再收计数:进度以蓝图游标为准,current/total/unit 会被丢掉。"
+              },
+              "kind": {
+                "type": "string",
+                "description": "可选追踪类型,自由写:建造/收集/击杀/捕获/探索/运输/种植/收获/红石/生存等。"
+              },
+              "target": {
+                "type": "string",
+                "description": "可选计数对象:物品、实体、地点、距离或工程阶段。"
+              },
+              "current": {
+                "type": "number",
+                "minimum": 0,
+                "description": "可选初始进度,默认 0。"
+              },
+              "total": {
+                "type": "number",
+                "minimum": 0,
+                "description": "可选目标总数。"
+              },
+              "unit": {
+                "type": "string",
+                "description": "可选单位,如 个/只/格/趟/分钟/阶段。"
+              }
+            },
+            "required": [
+              "text",
+              "plan"
+            ]
+          },
+          "milestone": {
+            "type": "object",
+            "description": "完成当前最前面的 judgment 里程碑；机械里程碑不能用它代填。",
+            "properties": {
+              "slot": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "step": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "judgment": {
+                "type": "string",
+                "description": "现场复看后的明确判断及依据。"
+              }
+            },
+            "required": [
+              "slot",
+              "step",
+              "judgment"
+            ]
+          },
+          "reopen": {
+            "type": "object",
+            "description": "显式撤回一项已经登记的 judgment 里程碑。",
+            "properties": {
+              "slot": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "step": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "reason": {
+                "type": "string",
+                "description": "为什么需要重新判断。"
+              }
+            },
+            "required": [
+              "slot",
+              "step",
+              "reason"
+            ]
+          },
+          "done": {
+            "type": "integer",
+            "description": "明确结案,槽位号 1..5。plan 的每项里程碑都有新鲜旁证后才受理。"
+          },
+          "drop": {
+            "type": "integer",
+            "description": "这一格不干了(不是干完),槽位号 1..5。"
+          }
+        },
+        "required": []
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "登记并跟踪当前世界里的目标,最多五个。",
+        "en": "Records and tracks up to five goals in the current world."
+      }
+    },
+    {
+      "name": "mc_map",
+      "description": "Register dimension-tagged named places in this world: home, bed, chest, workstation, danger zone, resource spot, portal, farm, landmark — up to 24. Call with no fields to read them all back with the bearing and distance for places in your current dimension. Tied to the current world and empty after a restart or a world change, so the lasting copy belongs in your own notes.",
+      "parameters": {
+        "type": "object",
+        "description": "一次只受理一件事。set 收数组 = 一次把笔记里那份地图整个装载回来。",
+        "properties": {
+          "set": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "这地方叫什么,你说了算;名字就是主键,重名 = 改那一处。"
+                },
+                "dimension": {
+                  "type": "string",
+                  "description": "坐标所属维度:overworld / the_nether / the_end(或完整 minecraft: id)。不写按主世界记,回执会点名是哪几条 —— 下界/末地的坐标一定要写。"
+                },
+                "pos": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "[x, y, z] 整数格。"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "家",
+                    "床",
+                    "箱",
+                    "工作站",
+                    "危险区",
+                    "资源点",
+                    "门户",
+                    "农田",
+                    "地标"
+                  ],
+                  "description": "这地方是什么。"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "一句备注(可不填)。"
+                },
+                "radius": {
+                  "type": "integer",
+                  "description": "只对危险区有用:圈多大(格)。标了半径,受理任务时目标点落进圈里我会说一声。"
+                }
+              },
+              "required": [
+                "name",
+                "pos",
+                "kind"
+              ]
+            },
+            "description": "登记路标:一条也写成一条的数组,一次交多条 = 把笔记里那份地图整个装载回来。名字已经有了 = 改那一处。"
+          },
+          "drop": {
+            "type": "string",
+            "description": "撤掉这个名字的路标。"
+          },
+          "rename": {
+            "type": "object",
+            "description": "给一处路标改名。",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "现在的名字。"
+              },
+              "to": {
+                "type": "string",
+                "description": "改成的新名字。"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        },
+        "required": []
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "给当前世界里的地点命名登记,最多 24 处,读回时带方位与距离。",
+        "en": "Names and records up to 24 places in the current world; reading them back gives bearing and distance."
+      }
+    },
+    {
+      "name": "mc_blueprint",
+      "description": "Design and hold Minecraft project blueprints: buildings, farms, mob systems, pits, redstone, and other functional structures. Hand a brief to background thinking, submit a finished design, inspect what is loaded, or drop one. A loaded blueprint is what mc_do build works from. Designs survive a world change; how far one is built does not.",
+      "parameters": {
+        "type": "object",
+        "description": "六件事,一次只受理一件:\n· {\"design\":{\"key\":\"farm-v2\",\"brief\":\"要什么结构或功能,写清楚\"}} —— 交给后台去构思。\n  立刻回执\"开工了\",几分钟后成没成都会浮上来。同键再下一次 = 带新要求重出图。\n· {\"save\":{…}} —— 交一份现成的设计;\n  太大就分批:每批带同样的 key/size_xyz/palette,加 \"append\":true,layers 只放接着的几层。分批齐了先成为 draft,不会替换当前可执行版本。\n· {\"accept\":{\"key\":\"farm-v2\",\"version_id\":\"…\",\"content_hash\":\"…\"}} —— 核对回执里的版本与摘要后,把完整 draft 提升成当前可执行版本。\n· {\"reserve_override\":{\"reason\":\"紧急脱困\",\"ttl_sec\":30,\"max_blocks\":8}} —— 限时借用蓝图保留料;原因、时效和最大块数缺一不可,用后标记需补料。\n· {} —— 看现在装载着哪几份、施工到哪儿了、还缺什么。\n· {\"unload\":\"home-v2\"} —— 卸掉一份(设计连缓存一起没,本世界的施工进度也没)。\n装载着的图用 mc_do 的 build 施工:{\"skill\":\"build\",\"blueprint\":\"farm-v2\",\"at\":[x,y,z]}。\nretrofit 首次只做初探。两种工地同待遇:有冲突格就要审阅无误后同锚点加 \"confirm\":true,才会清掉那些格再施工——没有哪一种会自动清场。\n\n交稿格式(Palette 方案),整份是一个 JSON 对象:\n{\"key\":\"<键>\",\"name\":\"<人话名字>\",\"site_mode\":\"new|retrofit\",\"size_xyz\":[X,Y,Z],\"axis_order\":\"YZX\",\n \"palette\":[\"minecraft:air\",\"minecraft:oak_planks\",\"minecraft:oak_stairs[facing=north,half=bottom]\"],\n \"layers\":[ 第0层, 第1层, … ]}\n· layers[y][z][x] 是 palette 的整数索引;实际画出的矩阵是尺寸权威,size_xyz 写偏会按实测尺寸登记并在回执说明;\n· y=0 是最低层(地面那层),X 从西到东,Z 从北到南;\n· site_mode 必须选:new=空地新建;retrofit=在现有结构上改,第一次 build 只探测不动方块。两种一样:矩阵里有冲突格就得审阅后带 confirm:true 才清掉,谁都不会自动清场;\n· palette 写完整的 Java block-state 串,带属性就整串写;不写属性会按 1.20.6 的默认值补;\n· 不限某一条边;palette 编码后的整份输出 ≤131072 字符,超了按层 append 也不会绕过总预算;\n· 不属于设计的格默认用 minecraft:structure_void(保留原状);minecraft:air 只表示明确清空,施工仍需 confirm:true;\n· 水/岩浆源、耕地、土径、age=0 作物、火会编译成桶/工具/种植动作;刷怪塔、农场、陷阱坑与红石机构都按最终方块状态画进同一张图;\n· 流动液体、成熟作物等过程状态不收;传送门等没有可靠施工动作的状态仍会点名拒收;\n· 门、床这类占两格的:只写主部件那一格与它的从部件(上半格/床头),两格都要在矩阵里对得上。\n· 作物图自带耕地层:melon_stem/pumpkin_stem/小麦/胡萝卜这些的正下方要画 minecraft:farmland(它会自动垫泥土再锄出来);图里没有那一层,种子就一直放不下去;\n· 门、床、火把、作物这些要贴着别的方块才立得住:支撑格要么画进图里,要么确认现场已经有。门底下要一格顶面完整的方块——栅栏、栅栏门、墙、下半砖、另一扇门都撑不住门;\n· 想保留现场原样的格(河道、树干、已有墙体)画 minecraft:structure_void,别画成 minecraft:air——air 是\"这一格必须清空\"。",
+        "properties": {
+          "design": {
+            "type": "object",
+            "description": "交给后台构思一份新设计(几分钟,成没成都会浮上来)。同键再下一次 = 带新要求重出图。",
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "这一份的键:小写字母数字加连字符,最长 32 个字符。"
+              },
+              "name": {
+                "type": "string",
+                "description": "人话名字(可不填)。"
+              },
+              "brief": {
+                "type": "string",
+                "description": "要什么结构或工程:功能、工地是新建还是改造、大小、材料与验收条件,你说了算。"
+              }
+            },
+            "required": [
+              "key",
+              "brief"
+            ]
+          },
+          "save": {
+            "type": "object",
+            "description": "交一份现成的设计(Palette 方案;分批加 append:true)。后台构思必须带任务说明里的 job_id。",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "job_id": {
+                "type": "string",
+                "description": "只给后台构思交稿：照任务说明里的不可变 job_id 原样填写。"
+              },
+              "version_id": {
+                "type": "string",
+                "description": "分批续交时照首批回执里的不可变 version_id 原样填写；首批不填。"
+              },
+              "site_mode": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "retrofit"
+                ],
+                "description": "new=空地新建;retrofit=先探测再改造现有结构。两种都不会自动清场。"
+              },
+              "size_xyz": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "axis_order": {
+                "type": "string",
+                "enum": [
+                  "YZX"
+                ],
+                "description": "轴序只有这一种;不写按它解释。"
+              },
+              "palette": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "layers": {
+                "type": "array",
+                "description": "满矩阵 layers[y][z][x],每个值是 palette 的整数索引。",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "append": {
+                "type": "boolean",
+                "description": "这一批接着上一批的层往后放。"
+              }
+            },
+            "required": [
+              "key",
+              "site_mode",
+              "size_xyz",
+              "palette",
+              "layers"
+            ]
+          },
+          "accept": {
+            "type": "object",
+            "description": "把完整 draft 提升成当前可执行版本；版本 id 与内容摘要都要照回执原样填写。",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "version_id": {
+                "type": "string"
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "version_id",
+              "content_hash"
+            ]
+          },
+          "reserve_override": {
+            "type": "object",
+            "description": "紧急情况下限时借用蓝图保留料；首次实际借料后登记需补料。",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "description": "为什么这次必须动保留料。"
+              },
+              "ttl_sec": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              "max_blocks": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              }
+            },
+            "required": [
+              "reason",
+              "ttl_sec",
+              "max_blocks"
+            ]
+          },
+          "unload": {
+            "type": "string",
+            "description": "卸掉这一份(设计连缓存一起没)。"
+          }
+        },
+        "required": []
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "设计、载入或丢弃建筑与机关的蓝图,mc_do 的建造照载入的蓝图施工。",
+        "en": "Designs, loads or drops blueprints for buildings and machines; mc_do builds from the loaded one."
+      }
+    },
+    {
+      "name": "mc_check",
+      "description": "Check what you believe against the world: hand in a list of assertions, get back only the differences. Read-only and instant: it never moves you and never touches the world, it only reads chunks that are already loaded. Use it before writing a conclusion (where something is, whether it exists, whether it worked) into your notes.",
+      "parameters": {
+        "type": "object",
+        "description": "一次最多 16 条断言,写成 checks 数组。回执只报差异:符合的合并一句带过。\n· {\"at\":[x,y,z],\"is\":\"chest\"} —— 这一格该是什么。只比方块种类,朝向、连接面不算数;\"is\":\"air\" = 这格该空着。\n· {\"box\":[[x1,y1,z1],[x2,y2,z2]],\"count\":{\"chest\":4,\"torch\":\">=8\"}} —— 区域里各有几个。整数 = 恰好,\">=N\" / \"<=N\" = 一侧的界。\n· {\"box\":…,\"all\":\"oak_planks\"} —— 区域里每一格都是它;{\"box\":…,\"air\":true} —— 区域里每一格都空着。\n· {\"box\":…,\"sealed\":true,\"from\":[x,y,z]} —— 这个盒子封不封得住(from 可不填,默认从盒中心起)。水和岩浆按通路算(会灌进来),不当墙;漏口报盒内那一格。\n· {\"inv\":{\"torch\":\">=8\",\"bread\":1}} —— 包里现有多少。物品名精确对(torch 只数火把,不含灵魂火把);要数一整族就每样写一条。值写成 {\"enchant\":\"efficiency\"} 就改问「带这个附魔的有几件」(默认至少一件,可加 \"count\")。\n· {\"blueprint\":\"home-v2\"} —— 这份图的工地现在对上多少格、缺哪几格。\n· {\"mark\":\"熔炉\"} —— 路标登记的东西那一格还在不在。\n区域断言一次最多 4096 格,sealed 最多 32768 格;超了那一条不算,会说清。\n只读已加载的区块:没加载的格照实说\"没加载\",既不算符合也不算不符——走近了再对一次。",
+        "properties": {
+          "checks": {
+            "type": "array",
+            "description": "一组断言;每条一个对象,形状见上。",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "checks"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "交一组断言给世界核对,只返回与事实不符的条目。",
+        "en": "Checks a list of assertions against the world and returns only the ones that do not hold."
+      }
+    },
+    {
+      "name": "mc_view_map",
+      "description": "Look at a filled map you are carrying: returns the map picture (top = north/-z, right = east/+x) plus its id, scale, how much of it is explored, its world centre when readable, and every icon on it (you, other players, banners, markers) with world coordinates. Read-only and instant. Without id it shows the map in your main hand, then off hand, then the first one in your bag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "地图编号(回执里的 #N);不写 = 手上那张,手上没有就包里第一张"
+          }
+        },
+        "required": []
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "看身上带的一张地图:图片、比例、探索程度与图上标记的坐标。",
+        "en": "Looks at a carried map: the picture, scale, explored share and the world coordinates of its markers."
+      }
+    },
+    {
+      "name": "mc_bag",
+      "description": "Read your inventory right now: how many of the 36 slots are used, what is in them, what is in your hand, and what armour you are wearing. Read-only and instant — it never moves you, never touches the world and never touches the work queue. Ask this instead of re-submitting a task to find out what you are carrying. Once per turn: asking again in the same turn returns a one-line pointer to the answer above.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "读当前背包内容。",
+        "en": "Reads the current inventory."
+      }
+    },
+    {
+      "name": "mc_queue",
+      "description": "Read the Minecraft work queue right now: the task being executed and which step it is on, the tasks waiting behind it, and how the most recent finished task ended. Read-only and instant — it changes nothing. Ask this instead of re-submitting a task to check progress. Once per turn: asking again in the same turn returns a one-line pointer to the answer above.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "读工作队列:正在做的任务、做到哪一步、后面排着什么。",
+        "en": "Reads the work queue: the running task, its current step and what waits behind it."
+      }
+    },
+    {
+      "name": "mc_blocked",
+      "description": "Read the last few steps that did not work out: when, which task, which step, and the verbatim reason each one reported. Read-only and instant. Ask this instead of re-submitting a task to find out why it failed. Once per turn: asking again in the same turn returns a one-line pointer to the answer above.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "读最近几次没做成的步骤及原因。",
+        "en": "Reads the last few steps that failed and why."
+      }
+    },
+    {
+      "name": "mc_stop",
+      "description": "Clear the Minecraft work queue: stop what is being done right now and drop everything waiting behind it.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "act"
+      ],
+      "summary": {
+        "zh": "清空工作队列,停下手上的活。",
+        "en": "Clears the work queue and stops the current task."
+      }
+    },
+    {
+      "name": "mc_escape",
+      "description": "Cheat: teleport to the NEAREST safe anchor (your respawn bed/anchor, the world spawn, or a place you marked as 家/床 on mc_map) keeping all items, and clear the work queue. ONLY for getting genuinely unstuck — when movement or the task truly cannot make progress. It is NOT a way to travel: do not use it to get somewhere you could walk to. Say something to the audience first. The nearest anchor may still be far from here; the receipt lists every candidate with its distance and says which one it used.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "act"
+      ],
+      "summary": {
+        "zh": "作弊传送到最近的安全点(床、出生点或登记的家)并清空队列,只用于卡死脱困。",
+        "en": "Cheat-teleports to the nearest safe anchor (bed, spawn or a recorded home) and clears the queue; meant only for getting unstuck."
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "minecraft.task",
+      "description": {
+        "zh": "工作队列里一件任务的结局:完成、部分完成、受阻或撤销,以及战斗反射的汇报。",
+        "en": "The outcome of a queued task (done, partial, blocked or cancelled), and reports from combat reflexes."
+      }
+    },
+    {
+      "type": "minecraft.task.progress",
+      "description": {
+        "zh": "正在执行的任务的进度读数。",
+        "en": "A progress reading of the running task."
+      },
+      "tags": [
+        "snapshot"
+      ]
+    },
+    {
+      "type": "minecraft.chat",
+      "description": {
+        "zh": "游戏内聊天、私聊、系统消息与动作栏文字;被点名或私聊时立即投递,bot 自己的发言只记录。",
+        "en": "In-game chat, private messages, system messages and action bar text; delivered at once on a mention or a private message, the bot's own lines only recorded."
+      }
+    },
+    {
+      "type": "minecraft.event",
+      "description": {
+        "zh": "游戏里发生的事:受伤、战斗、死亡、睡觉、升级、效果结束、附近出现的生物,以及游戏引擎崩溃重启。",
+        "en": "Things that happen in the game: damage, combat, death, sleeping, levelling up, effects ending, nearby mobs, and game engine crashes and restarts."
+      }
+    },
+    {
+      "type": "minecraft.world",
+      "description": {
+        "zh": "自上次汇报以来位置、生命值、背包等读数的变化。",
+        "en": "Changes in position, health, inventory and other readings since the last report."
+      }
+    },
+    {
+      "type": "minecraft.world.snapshot",
+      "description": {
+        "zh": "定期的世界快照:周围环境、背包、队列、目标与地点,随下一批事件送达。",
+        "en": "A periodic world snapshot (surroundings, inventory, queue, goals and places), sent with the next batch."
+      },
+      "trigger": "piggyback",
+      "tags": [
+        "snapshot"
+      ]
+    }
+  ],
+  "prompts": [
+    {
+      "key": "worlds.minecraft.envPrompt",
+      "title": "Minecraft · 环境提示词",
+      "role": "envPrompt",
+      "content": "你正在玩 Minecraft。版本 1.20.6 原版无 MOD。\n{{minecraft.world}}\n活是排着队做的：受理回执只说这件事收下了、开始做了，做没做成要等它自己的结果送过来。\n进度看回执和快照末尾的 [队列] 行——走到第几步、这一步是什么、跑了多久；「还没做完」和「没进展」靠这几个数分辨。一件活跑上二三十秒是常态，而你醒来比它做完快得多，想催进度先读那一行，别拿新单去顶一件正跑着的活。\n读数有三个只读入口，问它们不用重下单：mc_bag 是包里现在有什么（占了几格、都是什么、手上和身上穿的），mc_queue 是队列现状加最近一单的下场，mc_blocked 是最近几步没做成的原话。三个都是纯读，不动世界也不动队列。一轮里同一个问一次就够，答案在这一轮内不会变，再问只会拿回一句「上面已经答过了」。\n埋在石头里的、隔着墙的东西不进你的感知（隔着玻璃和铁栏杆算看得见）。找不到就挖开、绕过去、或者走近点再看。\n\n## 直播\n下矿之前身上带够火把，不然观众抓瞎什么都看不见。\n挨打还手是自动的，打起来你只管解说；要不要主动上去打是你说了算的，那一格是 mc_policy 的 fight。\n观众不知道你在游戏里的能力边界，他们以为你像真人一样在玩游戏，你就接受这个设定。做不到的事可以适度解释，解释不了的归结为【插件的问题】。\n用 mc_blueprint 的 design 想一份设计要跑上几分钟，开工前先跟观众说一声。\n\n## 闭包原则\n对外说话的唯一事实是你正在直接操作这个游戏。禁止暴露内部接口或工具回执。\n自动合成说「我合成了」，寻路说「我走到了」，自保反射说「我赶快跑」。\n意外就糊弄：游戏卡了、发呆、搞错了、头晕。禁止说系统、自动、等他跑完。\n\n## 做笔记\n* 地图：地标的名称、坐标、辨认特征。工地第一次正式开工后，把名称和锚点登记成路标。\n* 路线：长途拆成短段，记起点、终点、途经点、危险段。\n* 目标与进度：在做的、排队的、做完的；位置和进度带世界名。\n* 机制与教训：验证过的规律，带依据；错了标「已证伪」。\n\n什么在哪、有没有、成没成——写进笔记之前先用 mc_check 对一眼世界。对不上的、来不及对的，照实写成「我以为」「还没核对」，别写成看见过。\n记录时要使用生动的叙述性语言，不要压缩内容。系统设置不记笔记。\n\n{{minecraft.explored}}\n\n{{minecraft.policy}}\n\n{{minecraft.camera}}\n\n## 主动思考续推\n还有目标、新决策或可执行后续步骤，但这一轮没有立即可执行的动作时，在本轮文字开头写 `[continue-thinking]` 加一句简短的下一步计划，然后照常调用 `end_turn`；系统会用内部事件在下一轮把你唤醒，届时直接做动作或发声，不要等待、不要反复查队列或重复查状态。没有新想法、已经做完或已明确收尾时，普通 `end_turn` 就好，不要带这个标记。连续续推有上限、相同计划也不会重复投递，不要为凑轮次反复写同一句话。\n"
+    }
+  ]
+}

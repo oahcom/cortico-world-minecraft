@@ -1,0 +1,52 @@
+{
+  "name": "cortico-world-minecraft",
+  "version": "0.2.13",
+  "type": "module",
+  "description": "Cortico World: Minecraft Java Edition through a Mineflayer player — observation text, movement, building, combat and an observer client",
+  "author": "Pal AI Lab",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pal-AI-Lab/Cortico.git",
+    "directory": "src/worlds/minecraft"
+  },
+  "homepage": "https://github.com/Pal-AI-Lab/Cortico/tree/main/src/worlds/minecraft#readme",
+  "bugs": {
+    "url": "https://github.com/Pal-AI-Lab/Cortico/issues"
+  },
+  "keywords": [
+    "cortico-world",
+    "cortico",
+    "minecraft",
+    "mineflayer"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "Minecraft",
+    "icon": "src/icon.svg",
+    "webUiClient": "dist/webui.js",
+    "webUiStyle": "dist/webui.css",
+    "describe": "describe.json"
+  },
+  "files": [
+    "src",
+    "dist",
+    "describe.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "mineflayer": "4.37.1",
+    "mineflayer-pathfinder": "2.4.5",
+    "prismarine-viewer": "1.33.0",
+    "vec3": "0.2.0"
+  }
+}
